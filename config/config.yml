@@ -12,6 +12,8 @@ rpOrigins:
 #  - http://localhost:8080
 #  - https://service.example.com
 
+allowedRedirects: 
+  - http://localhost/
 ## serverAddress - Address the proxy server should listen on (usually 127.0.0.1 or 0.0.0.0)
 ## Note, it should be 0.0.0.0 when running in Docker and network mode is not "host".
 # serverAddress: 0.0.0.0
@@ -47,3 +49,17 @@ rpOrigins:
 ## cookieDomain - The domain to be used for cookies.
 ## Useful when running WebAuthn Proxy for multiple subdomains.
 # cookieDomain: example.com
+
+# oauth2Enabled: true
+# oauth2RedirectURL: http://localhost/auth_proxy/oauth2/callback
+# oauth2Providers:
+#   google:
+#     clientID: zzz.apps.googleusercontent.com
+#     authURL: https://accounts.google.com/o/oauth2/auth
+#     tokenURL: https://oauth2.googleapis.com/token
+#     userInfoURL: https://www.googleapis.com/oauth2/v3/userinfo
+#     scopes:
+#       - email
+#       - profile
+#     displayName: Google
+#     icon: https://static.cdnlogo.com/logos/g/38/google-icon.svg

@@ -1,81 +1,681 @@
-<html>
-    <head>
-        <meta charset="utf-8">
-        <title>WebAuthn Proxy Login</title>
-        <link rel="icon" type="image/x-icon" href="/webauthn/static/favicon.ico" />
-        <link rel="stylesheet" type="text/css" href="/webauthn/static/styles.css"  />
-        <script src="/webauthn/static/jquery-3.6.3.min.js"></script>
-        <script src="/webauthn/static/script.js"></script>
-        <script>
-            const registerLinkClick = (defaultUsername) => {
-                let uri = "/webauthn/register";
-                if (defaultUsername) {
-                    uri = uri + `?default_username=${defaultUsername}`;
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auth Proxy Login</title>
+
+    <!-- React 18 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- MUI 5 UMD (from unpkg CDN) -->
+    <script crossorigin src="https://unpkg.com/@mui/material@5.18.0/umd/material-ui.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import auth_proxy helper functions -->
+    <script src="/auth_proxy/static/script.js?v=20250718a"></script>
+
+    <!-- Roboto font & Material Icons -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+    <style>
+        #redirect-url {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- JSX code -->
+    <div id="redirect-url"></div>
+    <script>
+        const REDIRECT_URL = decodeURIComponent(document.getElementById('redirect-url').innerText)
+    </script>
+    <script type="text/babel">
+        const {
+            Box,
+            Button,
+            CircularProgress,
+            CssBaseline,
+            FormLabel,
+            FormControl,
+            Link,
+            TextField,
+            Typography,
+            createTheme,
+            ThemeProvider,
+            Stack,
+            Card: MuiCard,
+            styled,
+            useMediaQuery,
+            Alert,
+            Avatar,
+            Paper,
+            Fade,
+            Divider
+        } = MaterialUI;
+
+        // Material UI Icons
+        const FingerprintIcon = () => (
+            <span className="material-icons">fingerprint</span>
+        );
+
+        const FaceIcon = () => (
+            <span className="material-icons">face</span>
+        );
+
+        const ErrorIcon = () => (
+            <span className="material-icons" style={{ color: '#f44336', fontSize: '60px' }}>error</span>
+        );
+
+
+        const Card = styled(MuiCard)(({ theme }) => ({
+            display: 'flex',
+            flexDirection: 'column',
+            alignSelf: 'center',
+            width: '100%',
+            padding: theme.spacing(4),
+            gap: theme.spacing(2),
+            margin: 'auto',
+            [theme.breakpoints.up('sm')]: {
+                maxWidth: '450px',
+            },
+            boxShadow:
+                'hsla(220, 30%, 5%, 0.05) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.05) 0px 15px 35px -5px',
+            ...theme.applyStyles('dark', {
+                boxShadow:
+                    'hsla(220, 30%, 5%, 0.5) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.08) 0px 15px 35px -5px',
+            }),
+            borderRadius: theme.shape.borderRadius * 2,
+            overflow: 'hidden',
+        }));
+
+        const AuthAvatar = styled(Avatar)(({ theme }) => ({
+            margin: theme.spacing(2, 'auto'),
+            backgroundColor: theme.palette.primary.main,
+            width: 70,
+            height: 70,
+            '& .material-icons': {
+                fontSize: 40,
+            },
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+            transition: 'all 0.3s ease-in-out',
+            '&:hover': {
+                transform: 'scale(1.05)',
+                boxShadow: '0 6px 25px rgba(0, 0, 0, 0.15)',
+            },
+        }));
+
+        const SignInContainer = styled(Stack)(({ theme }) => ({
+            height: 'calc((1 - var(--template-frame-height, 0)) * 100dvh)',
+            minHeight: '100%',
+            padding: theme.spacing(2),
+            [theme.breakpoints.up('sm')]: {
+                padding: theme.spacing(4),
+            },
+            '&::before': {
+                content: '""',
+                display: 'block',
+                position: 'absolute',
+                zIndex: -1,
+                inset: 0,
+                backgroundImage:
+                    'radial-gradient(ellipse at 50% 50%, hsl(210, 100%, 97%), hsl(0, 0%, 100%))',
+                backgroundRepeat: 'no-repeat',
+                ...theme.applyStyles('dark', {
+                    backgroundImage:
+                        'radial-gradient(at 50% 50%, hsla(210, 100%, 16%, 0.5), hsl(220, 30%, 5%))',
+                }),
+            },
+        }));
+
+        // WebAuthn helper functions
+
+        // Format WebAuthn assertion for sending to server
+        const formatFinishLoginParams = assertion => JSON.stringify({
+            id: assertion.id,
+            rawId: bufferEncode(assertion.rawId),
+            type: assertion.type,
+            response: {
+                authenticatorData: bufferEncode(assertion.response.authenticatorData),
+                clientDataJSON: bufferEncode(assertion.response.clientDataJSON),
+                signature: bufferEncode(assertion.response.signature),
+                userHandle: bufferEncode(assertion.response.userHandle),
+            }
+        });
+        function generateChallenge(string) {
+            return Uint8Array.from(string, c => c.charCodeAt(0));
+        }
+
+        let abortController = null;
+        function App(props) {
+            const [username, setUsername] = React.useState('');
+            const [usernameError, setUsernameError] = React.useState(false);
+            const [usernameErrorMessage, setUsernameErrorMessage] = React.useState('');
+            const [errorMessage, setErrorMessage] = React.useState('');
+            const [successMessage, setSuccessMessage] = React.useState('');
+            const [showUsernameForm, setShowUsernameForm] = React.useState(true);
+            const [isAuthenticating, setIsAuthenticating] = React.useState(false);
+            const [hasAuthError, setHasAuthError] = React.useState(false);
+            const [oauth2Providers, setOauth2Providers] = React.useState([]);
+            const [isLoadingProviders, setIsLoadingProviders] = React.useState(true);
+
+
+            function handleAbort() {
+                if (abortController) {
+                    abortController.abort();
+                    abortController = null;
                 }
-                window.location.href = uri;
+            }
+            async function conditionalMediationLogin() {
+                handleAbort();
+                abortController = new AbortController();
+
+                // Get redirect URL if available
+                let redirectUrl = REDIRECT_URL;
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('redirect_url')) {
+                    redirectUrl = urlParams.get('redirect_url');
+                }
+
+                // Start WebAuthn authentication process
+                fetch('/auth_proxy/webauthn/login/get_credential_request_options', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Invalid network response');
+                        }
+                        return response.json();
+                    })
+                    .then(credRequestOptions => {
+                        credRequestOptions.publicKey.challenge = bufferDecode(credRequestOptions.publicKey.challenge);
+                        delete credRequestOptions.publicKey.allowCredentials;
+                        credRequestOptions.publicKey.userVerification = "preferred"
+
+                        return navigator.credentials.get({
+                            publicKey: credRequestOptions.publicKey,
+                            signal: abortController.signal
+                        });
+                    })
+                    .then(assertion => {
+                        // Get redirect URL if available
+                        let redirectUrl = REDIRECT_URL;
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.get('redirect_url')) {
+                            redirectUrl = urlParams.get('redirect_url');
+                        }
+                        
+                        // Add redirect_url to the request URL if available
+                        let requestUrl = '/auth_proxy/webauthn/login/process_login_assertion';
+                        if (redirectUrl) {
+                            requestUrl += `?redirect_url=${encodeURIComponent(redirectUrl)}`;
+                        }
+                        
+                        return fetch(requestUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: formatFinishLoginParams(assertion)
+                        });
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Authentication failed');
+                        }
+                        return response.json();
+                    })
+                    .then(success => {
+                        setSuccessMessage(success.Message);
+                        
+                        // If redirect_url is in the response, redirect to it
+                        if (success.redirect_url) {
+                            window.location.href = success.redirect_url;
+                        } else {
+                            window.location.reload();
+                        }
+                    })
+            }
+
+            // Check if browser supports WebAuthn and handle URL parameters
+            React.useEffect(() => {
+                // Fetch OAuth2 providers
+                fetch('/auth_proxy/oauth2/providers')
+                    .then(response => {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                        return { providers: [] };
+                    })
+                    .then(data => {
+                        setOauth2Providers(data.providers || []);
+                        setIsLoadingProviders(false);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching OAuth2 providers:', error);
+                        setIsLoadingProviders(false);
+                    });
+
+                if (!window.PublicKeyCredential) {
+                    setErrorMessage('This browser does not support WebAuthn :(');
+                    return;
+                }
+                try {
+                    conditionalMediationLogin();
+
+                } catch (err) {
+                    console.error("Auto login check failed", err);
+                }
+
+                const urlParams = new URLSearchParams(window.location.search);
+
+                // Handle user=1 parameter - hide form and auto-login
+                if (urlParams.has('user')) {
+                    setShowUsernameForm(false);
+                    setUsername(urlParams.has('user'));
+
+                    // Trigger WebAuthn login automatically
+                    setIsAuthenticating(true);
+                    setTimeout(() => {
+                        try {
+                            authenticateUser(urlParams.has('user')); // Pass username directly
+                        } catch (error) {
+                            setErrorMessage('WebAuthn authentication failed: ' + error.message);
+                            setIsAuthenticating(false);
+                            setHasAuthError(true);
+                        }
+                    }, 800); // Small delay to ensure component is ready and show animation
+                    return;
+                }
+
+                // Handle default_username parameter
+                if (urlParams.has('default_username')) {
+                    const defaultUsername = urlParams.get('default_username');
+                    setUsername(defaultUsername);
+                }
+            }, []);
+
+            // Handle OAuth2 login
+            const handleOAuth2Login = (provider) => {
+                // Check if there's a redirect_url in the current URL
+                let redirectUrl = REDIRECT_URL;
+
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('redirect_url')) {
+                    redirectUrl = urlParams.get('redirect_url');
+                }
+                
+                // Build the OAuth2 login URL with provider and redirect_url if available
+                let oauth2Url = `/auth_proxy/oauth2/login?provider=${provider}`;
+                if (redirectUrl) {
+                    oauth2Url += `&redirect_url=${encodeURIComponent(redirectUrl)}`;
+                }
+
+                window.location.href = oauth2Url;
             };
 
-            $(document).ready(() => {
-                if (browserCheck()) {
-                    $('#username').keyup(function(e) {
-                        if ($("#username").is(":focus") && event.key == "Enter") {
-                            authenticateUser();
-                        }
-                    });
-                    $('#loginButton').click(authenticateUser);
+            // WebAuthn authentication function
+            const authenticateUser = (usernameParam) => {
+                handleAbort();
+                abortController = new AbortController();
+                // Use the parameter if provided, otherwise use state
+                const currentUsername = usernameParam || username;
 
-                    // Prepopulate the username field if specified
-                    let queryString = window.location.search;
-                    let urlParams = new URLSearchParams(queryString);
-                    let username = null;
-                    if (urlParams.has('default_username')) {
-                        username = urlParams.get('default_username');
-                    } else {
-                        let cookies = document.cookie.split(';');
-                        for (let i = 0; i < cookies.length; i++) {
-                            let parts = cookies[i].split('=');
-                            if (parts[0].trim() === "webauthn-proxy-username") {
-                                username = decodeURIComponent(parts[1]);
-                                break;
-                            }
-                        }
-                        // From the future: the below code works only in Chrome.
-                        // let cookie = cookieStore.get("webauthn-proxy-username");
-                        // const cookieValue = () => {
-                        //     cookie.then((a) => {
-                        //         $('#username').val(a.value);
-                        //         $('#registerLink').click(registerLinkClick.bind(registerLinkClick, a.value));
-                        //     })
-                        //     .catch(error => {})
-                        // };
-                        // cookieValue();
-                    }
-
-                    // Set focus and value to the username field
-                    $('#username').focus();
-                    $('#username').val(username);
-
-                    // Click handler for the "register" link
-                    $('#registerLink').click(registerLinkClick.bind(registerLinkClick, username));
+                if (!currentUsername) {
+                    setUsernameError(true);
+                    setUsernameErrorMessage('Please enter a valid username.');
+                    setIsAuthenticating(false);
+                    return;
                 }
-            });
-        </script>
-    </head>
-    <body>
-        <div id="form">
-            <img src="/webauthn/static/title-image.png" />
-            <div id="errorMessages" class="errorMessageText"></div>
-            <div id="successMessages" class="successMessageText"></div>
-            <br />
-            <table>
-                <tr>
-                    <td>Authenticate:</td>
-                    <td><input type="text" name="username" id="username" size="30" autocomplete="off" data-1p-ignore /></td>
-                    <td><button id="loginButton">Login</button></td>
-                </tr>
-            </table>
-            <br />
-            New User? <a id="registerLink">Register</a>
-        </div>
-    </body>
+
+                // Clear previous messages and states
+                setErrorMessage('');
+                setSuccessMessage('');
+                if (setHasAuthError) setHasAuthError(false);
+
+                // Start WebAuthn authentication process
+                fetch('/auth_proxy/webauthn/login/get_credential_request_options?username=' + encodeURIComponent(currentUsername), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Invalid network response');
+                        }
+                        return response.json();
+                    })
+                    .then(credRequestOptions => {
+                        credRequestOptions.publicKey.challenge = bufferDecode(credRequestOptions.publicKey.challenge);
+                        credRequestOptions.publicKey.allowCredentials.forEach(listItem => {
+                            listItem.id = bufferDecode(listItem.id);
+                        });
+
+                        return navigator.credentials.get({
+                            publicKey: credRequestOptions.publicKey
+                        });
+                    })
+                    .then(assertion => {
+                        // Get redirect URL if available
+                        let redirectUrl = REDIRECT_URL;
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.get('redirect_url')) {
+                            redirectUrl = urlParams.get('redirect_url');
+                        }
+                        
+                        // Build the request URL with username and redirect_url if available
+                        let requestUrl = '/auth_proxy/webauthn/login/process_login_assertion?username=' + encodeURIComponent(currentUsername);
+                        if (redirectUrl) {
+                            requestUrl += `&redirect_url=${encodeURIComponent(redirectUrl)}`;
+                        }
+                        
+                        return fetch(requestUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: formatFinishLoginParams(assertion)
+                        });
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Authentication failed');
+                        }
+                        return response.json();
+                    })
+                    .then(success => {
+                        setSuccessMessage(success.Message);
+                        
+                        // If redirect_url is in the response, redirect to it
+                        if (success.redirect_url) {
+                            window.location.href = success.redirect_url;
+                        } else {
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Authentication error:', error);
+                        if (error.response && error.response.json) {
+                            error.response.json().then(data => {
+                                setErrorMessage(data.Message || 'Authentication failed');
+                            }).catch(() => {
+                                setErrorMessage('Error: ' + error.message);
+                            });
+                        } else {
+                            setErrorMessage('Error: ' + error.message);
+                        }
+                        setIsAuthenticating(false);
+                        setHasAuthError(true);
+                    });
+            };
+
+            const validateUsername = () => {
+                if (!username) {
+                    setUsernameError(true);
+                    setUsernameErrorMessage('Please enter a valid username.');
+                    return false;
+                } else {
+                    setUsernameError(false);
+                    setUsernameErrorMessage('');
+                    return true;
+                }
+            };
+
+            const handleWebAuthnLogin = () => {
+                if (!validateUsername()) {
+                    return;
+                }
+
+                // Clear previous messages
+                setErrorMessage('');
+                setSuccessMessage('');
+                setIsAuthenticating(true);
+
+                // Call the WebAuthn login function
+                try {
+                    authenticateUser();
+                } catch (error) {
+                    setErrorMessage('WebAuthn authentication failed: ' + error.message);
+                    setIsAuthenticating(false);
+                    setHasAuthError(true);
+                }
+            };
+
+            const handleKeyPress = (event) => {
+                if (event.key === 'Enter') {
+                    handleWebAuthnLogin();
+                }
+            };
+
+            const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
+
+            const theme = React.useMemo(
+                () =>
+                    createTheme({
+                        palette: {
+                            mode: prefersDarkMode ? 'dark' : 'light',
+                        },
+                    }),
+                [prefersDarkMode],
+            );
+
+            return (
+                <ThemeProvider theme={theme}>
+                    <CssBaseline enableColorScheme />
+                    <SignInContainer direction="column" justifyContent="space-between">
+                        <Card variant="outlined">
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                mb: 2
+                            }}>
+                                <AuthAvatar>
+                                    <FingerprintIcon />
+                                </AuthAvatar>
+                                <Typography
+                                    component="h1"
+                                    variant="h4"
+                                    align="center"
+                                    sx={{
+                                        width: '100%',
+                                        fontSize: 'clamp(2rem, 10vw, 2.15rem)',
+                                        mt: 1
+                                    }}
+                                >
+                                Authentication Required
+                                </Typography>
+                            </Box>
+
+                            {errorMessage && (
+                                <Alert severity="error" id="errorMessages">{errorMessage}</Alert>
+                            )}
+
+                            {successMessage && (
+                                <Alert severity="success" id="successMessages">{successMessage}</Alert>
+                            )}
+
+                            <Box
+                                component="form"
+                                noValidate
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    width: '100%',
+                                    gap: 2,
+                                }}
+                            >
+                                {showUsernameForm ? (
+                                    <>
+                                        <FormControl>
+                                            <TextField
+                                                error={usernameError}
+                                                helperText={usernameErrorMessage}
+                                                id="username"
+                                                name="username"
+                                                placeholder="Username"
+                                                autoComplete="webauthn"
+                                                autoFocus
+                                                required
+                                                fullWidth
+                                                variant="outlined"
+                                                value={username}
+                                                onChange={(e) => setUsername(e.target.value)}
+                                                color={usernameError ? 'error' : 'primary'}
+                                                onKeyPress={handleKeyPress}
+                                                InputProps={{
+                                                    endAdornment: (
+                                                        <Box sx={{ color: 'text.secondary', mr: 1 }}>
+                                                            <FaceIcon />
+                                                        </Box>
+                                                    ),
+                                                }}
+                                            />
+                                        </FormControl>
+
+                                        <Button
+                                            fullWidth
+                                            variant="contained"
+                                            onClick={handleWebAuthnLogin}
+                                            id="loginButton"
+                                            disabled={isAuthenticating}
+                                            sx={{
+                                                py: 1.5,
+                                                borderRadius: 2,
+                                                boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)',
+                                                transition: 'all 0.3s ease',
+                                                '&:hover': {
+                                                    transform: 'translateY(-2px)',
+                                                    boxShadow: '0 6px 15px rgba(0, 0, 0, 0.2)',
+                                                }
+                                            }}
+                                            startIcon={isAuthenticating ? <CircularProgress size={20} color="inherit" /> : <FingerprintIcon />}
+                                        >
+                                            {isAuthenticating ? 'Authenticating...' : 'Sign in with WebAuthn'}
+                                        </Button>
+
+
+                                        {/* OAuth2 Providers */}
+                                        {oauth2Providers.length > 0 && (
+                                            <>
+                                                <Divider>or</Divider>
+                                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                    {oauth2Providers
+                                                        .map(provider => (
+
+                                                            <Button
+                                                                key={provider.name}
+                                                                fullWidth
+                                                                variant="outlined"
+                                                                onClick={() => handleOAuth2Login(provider.name)}
+                                                                startIcon={<img width={15} src={provider.icon} />}
+                                                                sx={{
+                                                                    borderRadius: 2,
+                                                                    transition: 'all 0.3s ease',
+                                                                    '&:hover': {
+                                                                        transform: 'translateY(-2px)',
+                                                                        boxShadow: '0 4px 10px rgba(0, 0, 0, 0.1)',
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Sign in with {provider.displayName || provider.name}
+                                                            </Button>
+                                                        ))}
+
+                                                </Box>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <Box sx={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        py: 3
+                                    }}>
+                                        <Fade in={true} style={{ transitionDelay: '300ms' }}>
+                                            {hasAuthError ? (
+                                                <Box sx={{ textAlign: 'center' }}>
+                                                    <ErrorIcon />
+                                                </Box>
+                                            ) : (
+                                                <CircularProgress size={60} thickness={4} />
+                                            )}
+                                        </Fade>
+                                        <Typography
+                                            variant="body1"
+                                            align="center"
+                                            sx={{
+                                                mt: 3,
+                                                color: hasAuthError ? 'error.main' : 'text.primary'
+                                            }}
+                                        >
+                                            {hasAuthError ? 'Authentication failed' : 'Authenticating with WebAuthn...'}
+                                        </Typography>
+                                        {hasAuthError && (
+                                            <Button
+                                                variant="outlined"
+                                                color="primary"
+                                                sx={{ mt: 2 }}
+                                                onClick={() => {
+                                                    // Reset error states
+                                                    setHasAuthError(false);
+                                                    setErrorMessage('');
+                                                    // Set authenticating state
+                                                    setIsAuthenticating(true);
+                                                    // Try authentication again with the same username
+                                                    setTimeout(() => {
+                                                        try {
+                                                            authenticateUser();
+                                                        } catch (error) {
+                                                            setErrorMessage('WebAuthn authentication failed: ' + error.message);
+                                                            setIsAuthenticating(false);
+                                                            setHasAuthError(true);
+                                                        }
+                                                    }, 300); // Small delay for visual feedback
+                                                }}
+                                            >
+                                                Try Again
+                                            </Button>
+                                        )}
+                                    </Box>
+                                )}
+
+
+                                <Typography sx={{ textAlign: 'center' }}>
+                                    Don&apos;t have an account?{' '}
+                                    <Link
+                                        href="/auth_proxy/webauthn/register"
+                                        variant="body2"
+                                        sx={{ alignSelf: 'center' }}
+                                    >
+                                        Register
+                                    </Link>
+                                </Typography>
+                            </Box>
+                        </Card>
+                    </SignInContainer>
+                </ThemeProvider>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+
+
+    </script>
+</body>
+
 </html>

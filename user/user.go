@@ -17,6 +17,11 @@ type User struct {
 	Name        string
 	DisplayName string
 	Credentials []webauthn.Credential
+	
+	// OAuth2 related fields
+	OAuth2Provider string            // The OAuth2 provider (google, github, facebook, etc.)
+	OAuth2ID       string            // User ID from the OAuth2 provider
+	OAuth2Data     map[string]string // Additional OAuth2 data (email, profile picture, etc.)
 }
 
 func NewUser(name string) *User {
@@ -24,7 +29,18 @@ func NewUser(name string) *User {
 	user.ID = randomUint64()
 	user.Name = name
 	user.DisplayName = name
+	user.OAuth2Data = make(map[string]string)
 
+	return user
+}
+
+// NewOAuth2User creates a new user from OAuth2 data
+func NewOAuth2User(name string, provider string, oauthID string, data map[string]string) *User {
+	user := NewUser(name)
+	user.OAuth2Provider = provider
+	user.OAuth2ID = oauthID
+	user.OAuth2Data = data
+	
 	return user
 }
 

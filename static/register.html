@@ -1,65 +1,466 @@
-<html>
-    <head>
-        <meta charset="utf-8">
-        <title>WebAuthn Proxy Register</title>
-        <link rel="icon" type="image/x-icon" href="/webauthn/static/favicon.ico" />
-        <link rel="stylesheet" type="text/css" href="/webauthn/static/styles.css"  />
-        <script src="/webauthn/static/jquery-3.6.3.min.js"></script>
-        <script src="/webauthn/static/script.js"></script>
-        <script>
-            $(document).ready(() => {
-                if (browserCheck()) {
-                    $('#username').keyup(function(e) {
-                        if ($("#username").is(":focus") && event.key == "Enter") {
-                            registerUser();
-                        }
-                    });
-                    $('#registerButton').click(registerUser);
+<!DOCTYPE html>
+<html lang="en">
 
-                    // Prepopulate the username field if specified
-                    let queryString = window.location.search;
-                    let urlParams = new URLSearchParams(queryString);
-                    if (urlParams.has('default_username')) {
-                        let username = urlParams.get('default_username');
-                        $('#username').val(username);
-                    }
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebAuthn Proxy Register</title>
 
-                    // Set up copy-to-clipboard button
-                    $('#copyButton').click(() => {
-                        var preformattedMessagesArea = $('#preformattedMessages');
-                        preformattedMessagesArea.select();
-                        navigator.clipboard.writeText(preformattedMessagesArea.val());
+    <!-- React 18 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
-                        // "Flash" it to indicate that the text was copied
-                        preformattedMessagesArea.fadeOut(200).fadeIn(200);
-                    });
+    <!-- MUI 5 UMD (from unpkg CDN) -->
+    <script crossorigin src="https://unpkg.com/@mui/material@5.18.0/umd/material-ui.production.min.js"></script>
 
-                    // Set focus to the username field
-                    $('#username').focus();
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import auth_proxy helper functions -->
+    <script src="/auth_proxy/static/script.js?v=20250718a"></script>
+
+    <!-- Roboto font & Material Icons -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- JSX code -->
+    <script type="text/babel">
+        const {
+            Box,
+            Button,
+            CircularProgress,
+            CssBaseline,
+            FormLabel,
+            FormControl,
+            Link,
+            TextField,
+            Typography,
+            createTheme,
+            ThemeProvider,
+            Stack,
+            Card: MuiCard,
+            styled,
+            useMediaQuery,
+            Alert,
+            Avatar,
+            Paper,
+            Fade,
+            IconButton,
+            Tooltip,
+            TextareaAutosize
+        } = MaterialUI;
+
+        // Material UI Icons
+        const FingerprintIcon = () => (
+            <span className="material-icons">fingerprint</span>
+        );
+
+        const FaceIcon = () => (
+            <span className="material-icons">face</span>
+        );
+
+        const ErrorIcon = () => (
+            <span className="material-icons" style={{ color: '#f44336', fontSize: '60px' }}>error</span>
+        );
+
+        const ContentCopyIcon = () => (
+            <span className="material-icons">content_copy</span>
+        );
+
+
+        const Card = styled(MuiCard)(({ theme }) => ({
+            display: 'flex',
+            flexDirection: 'column',
+            alignSelf: 'center',
+            width: '100%',
+            padding: theme.spacing(4),
+            gap: theme.spacing(2),
+            margin: 'auto',
+            [theme.breakpoints.up('sm')]: {
+                maxWidth: '450px',
+            },
+            boxShadow:
+                'hsla(220, 30%, 5%, 0.05) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.05) 0px 15px 35px -5px',
+            ...theme.applyStyles('dark', {
+                boxShadow:
+                    'hsla(220, 30%, 5%, 0.5) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.08) 0px 15px 35px -5px',
+            }),
+            borderRadius: theme.shape.borderRadius * 2,
+            overflow: 'hidden',
+        }));
+
+        const AuthAvatar = styled(Avatar)(({ theme }) => ({
+            margin: theme.spacing(2, 'auto'),
+            backgroundColor: theme.palette.primary.main,
+            width: 70,
+            height: 70,
+            '& .material-icons': {
+                fontSize: 40,
+            },
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+            transition: 'all 0.3s ease-in-out',
+            '&:hover': {
+                transform: 'scale(1.05)',
+                boxShadow: '0 6px 25px rgba(0, 0, 0, 0.15)',
+            },
+        }));
+
+        const SignInContainer = styled(Stack)(({ theme }) => ({
+            height: 'calc((1 - var(--template-frame-height, 0)) * 100dvh)',
+            minHeight: '100%',
+            padding: theme.spacing(2),
+            [theme.breakpoints.up('sm')]: {
+                padding: theme.spacing(4),
+            },
+            '&::before': {
+                content: '""',
+                display: 'block',
+                position: 'absolute',
+                zIndex: -1,
+                inset: 0,
+                backgroundImage:
+                    'radial-gradient(ellipse at 50% 50%, hsl(210, 100%, 97%), hsl(0, 0%, 100%))',
+                backgroundRepeat: 'no-repeat',
+                ...theme.applyStyles('dark', {
+                    backgroundImage:
+                        'radial-gradient(at 50% 50%, hsla(210, 100%, 16%, 0.5), hsl(220, 30%, 5%))',
+                }),
+            },
+        }));
+
+        const StyledTextarea = styled(TextareaAutosize)(({ theme }) => ({
+            width: '100%',
+            fontFamily: 'monospace',
+            fontSize: '0.875rem',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid #ccc',
+            backgroundColor: theme.palette.mode === 'dark' ? '#1e1e1e' : '#f5f5f5',
+            color: theme.palette.text.primary,
+            resize: 'vertical',
+            minHeight: '80px',
+            marginTop: '8px',
+        }));
+
+        // WebAuthn helper functions
+        
+        // Format WebAuthn registration for sending to server
+        const formatFinishRegParams = cred => JSON.stringify({
+            id: cred.id,
+            rawId: bufferEncode(cred.rawId),
+            type: cred.type,
+            response: {
+                attestationObject: bufferEncode(cred.response.attestationObject),
+                clientDataJSON: bufferEncode(cred.response.clientDataJSON),
+            },
+        });
+
+        function App(props) {
+            const [username, setUsername] = React.useState('');
+            const [usernameError, setUsernameError] = React.useState(false);
+            const [usernameErrorMessage, setUsernameErrorMessage] = React.useState('');
+            const [errorMessage, setErrorMessage] = React.useState('');
+            const [successMessage, setSuccessMessage] = React.useState('');
+            const [preformattedMessage, setPreformattedMessage] = React.useState('');
+            const [isRegistering, setIsRegistering] = React.useState(false);
+            const [hasRegError, setHasRegError] = React.useState(false);
+            const [copySuccess, setCopySuccess] = React.useState(false);
+
+            // Check if browser supports WebAuthn and handle URL parameters
+            React.useEffect(() => {
+                if (!window.PublicKeyCredential) {
+                    setErrorMessage('This browser does not support WebAuthn :(');
+                    return;
                 }
-            });
-        </script>
-    </head>
-    <body>
-        <div id="form">
-            <img src="/webauthn/static/title-image.png" />
-            <div id="errorMessages" class="errorMessageText"></div>
-            <div id="successMessages" class="successMessageText"></div>
-            <br />
-            <table>
-                <tr>
-                    <td>Username:</td>
-                    <td><input type="text" name="username" id="username" size="30" autocomplete="off" data-1p-ignore /></td>
-                    <td><button id="registerButton">Register</button></td>
-                </tr>
-            </table>
-            <br />
-            <span>
-                <textarea readonly id="preformattedMessages" rows="4" cols="100"></textarea>
-                <input type="image" id="copyButton" src="/webauthn/static/clipboard.png" />
-            </span>
-            <br />
-            Already registered? <a href="/webauthn/login">Login</a>
-        </div>
-    </body>
+
+                const urlParams = new URLSearchParams(window.location.search);
+
+                // Handle default_username parameter
+                if (urlParams.has('default_username')) {
+                    const defaultUsername = urlParams.get('default_username');
+                    setUsername(defaultUsername);
+                }
+            }, []);
+
+            // WebAuthn registration function
+            const registerUser = () => {
+                if (!username) {
+                    setUsernameError(true);
+                    setUsernameErrorMessage('Please enter a valid username.');
+                    setIsRegistering(false);
+                    return;
+                }
+                
+                // Clear previous messages and states
+                setErrorMessage('');
+                setSuccessMessage('');
+                setPreformattedMessage('');
+                if (setHasRegError) setHasRegError(false);
+                
+                // Start WebAuthn registration process
+                fetch('/auth_proxy/webauthn/register/get_credential_creation_options?username=' + encodeURIComponent(username), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(credCreateOptions => {
+                    credCreateOptions.publicKey.challenge = bufferDecode(credCreateOptions.publicKey.challenge);
+                    credCreateOptions.publicKey.user.id = bufferDecode(credCreateOptions.publicKey.user.id);
+                    if (credCreateOptions.publicKey.excludeCredentials) {
+                        for (let cred of credCreateOptions.publicKey.excludeCredentials) {
+                            cred.id = bufferDecode(cred.id);
+                        }
+                    }
+                    
+                    return navigator.credentials.create({
+                        publicKey: credCreateOptions.publicKey
+                    });
+                })
+                .then(cred => {
+                    return fetch('/auth_proxy/webauthn/register/process_registration_attestation?username=' + encodeURIComponent(username), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: formatFinishRegParams(cred)
+                    });
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Registration failed');
+                    }
+                    return response.json();
+                })
+                .then(success => {
+                    setSuccessMessage(success.Message);
+                    setPreformattedMessage(success.Data);
+                    setIsRegistering(false);
+                })
+                .catch(error => {
+                    console.error('Registration error:', error);
+                    if (error.response && error.response.json) {
+                        error.response.json().then(data => {
+                            setErrorMessage(data.Message || 'Registration failed');
+                        }).catch(() => {
+                            setErrorMessage('Registration failed: ' + error.message);
+                        });
+                    } else {
+                        setErrorMessage('Registration failed: ' + error.message);
+                    }
+                    setIsRegistering(false);
+                    setHasRegError(true);
+                });
+            };
+
+            const validateUsername = () => {
+                if (!username) {
+                    setUsernameError(true);
+                    setUsernameErrorMessage('Please enter a valid username.');
+                    return false;
+                } else {
+                    setUsernameError(false);
+                    setUsernameErrorMessage('');
+                    return true;
+                }
+            };
+
+            const handleRegister = () => {
+                if (!validateUsername()) {
+                    return;
+                }
+
+                // Clear previous messages
+                setErrorMessage('');
+                setSuccessMessage('');
+                setPreformattedMessage('');
+                setIsRegistering(true);
+
+                // Call the WebAuthn registration function
+                try {
+                    registerUser();
+                } catch (error) {
+                    setErrorMessage('WebAuthn registration failed: ' + error.message);
+                    setIsRegistering(false);
+                    setHasRegError(true);
+                }
+            };
+
+            const handleKeyPress = (event) => {
+                if (event.key === 'Enter') {
+                    handleRegister();
+                }
+            };
+
+            const handleCopyToClipboard = () => {
+                if (preformattedMessage) {
+                    navigator.clipboard.writeText(preformattedMessage)
+                        .then(() => {
+                            setCopySuccess(true);
+                            setTimeout(() => setCopySuccess(false), 2000);
+                        })
+                        .catch(err => {
+                            console.error('Failed to copy text: ', err);
+                        });
+                }
+            };
+
+            const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
+
+            const theme = React.useMemo(
+                () =>
+                    createTheme({
+                        palette: {
+                            mode: prefersDarkMode ? 'dark' : 'light',
+                        },
+                    }),
+                [prefersDarkMode],
+            );
+
+            return (
+                <ThemeProvider theme={theme}>
+                    <CssBaseline enableColorScheme />
+                    <SignInContainer direction="column" justifyContent="space-between">
+                        <Card variant="outlined">
+                            <Box sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                mb: 2
+                            }}>
+                                <AuthAvatar>
+                                    <FingerprintIcon />
+                                </AuthAvatar>
+                                <Typography
+                                    component="h1"
+                                    variant="h4"
+                                    align="center"
+                                    sx={{
+                                        width: '100%',
+                                        fontSize: 'clamp(2rem, 10vw, 2.15rem)',
+                                        mt: 1
+                                    }}
+                                >
+                                    WebAuthn Register
+                                </Typography>
+                            </Box>
+
+                            {errorMessage && (
+                                <Alert severity="error" id="errorMessages">{errorMessage}</Alert>
+                            )}
+
+                            {successMessage && (
+                                <Alert severity="success" id="successMessages">{successMessage}</Alert>
+                            )}
+
+                            <Box
+                                component="form"
+                                noValidate
+                                sx={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    width: '100%',
+                                    gap: 2,
+                                }}
+                            >
+                                <FormControl>
+                                    <TextField
+                                        error={usernameError}
+                                        helperText={usernameErrorMessage}
+                                        id="username"
+                                        name="username"
+                                        placeholder="Username"
+                                        autoComplete="username"
+                                        autoFocus
+                                        required
+                                        fullWidth
+                                        variant="outlined"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        color={usernameError ? 'error' : 'primary'}
+                                        onKeyPress={handleKeyPress}
+                                        InputProps={{
+                                            endAdornment: (
+                                                <Box sx={{ color: 'text.secondary', mr: 1 }}>
+                                                    <FaceIcon />
+                                                </Box>
+                                            ),
+                                        }}
+                                    />
+                                </FormControl>
+
+                                <Button
+                                    fullWidth
+                                    variant="contained"
+                                    onClick={handleRegister}
+                                    id="registerButton"
+                                    disabled={isRegistering}
+                                    sx={{
+                                        py: 1.5,
+                                        borderRadius: 2,
+                                        boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)',
+                                        transition: 'all 0.3s ease',
+                                        '&:hover': {
+                                            transform: 'translateY(-2px)',
+                                            boxShadow: '0 6px 15px rgba(0, 0, 0, 0.2)',
+                                        }
+                                    }}
+                                    startIcon={isRegistering ? <CircularProgress size={20} color="inherit" /> : <FingerprintIcon />}
+                                >
+                                    {isRegistering ? 'Registering...' : 'Register with WebAuthn'}
+                                </Button>
+
+                                {preformattedMessage && (
+                                    <Box sx={{ mt: 2, position: 'relative' }}>
+                                        <FormLabel htmlFor="preformattedMessages">Registration Data</FormLabel>
+                                        <StyledTextarea
+                                            id="preformattedMessages"
+                                            value={preformattedMessage}
+                                            readOnly
+                                        />
+                                        <Tooltip title={copySuccess ? "Copied!" : "Copy to clipboard"} placement="top">
+                                            <IconButton
+                                                onClick={handleCopyToClipboard}
+                                                sx={{
+                                                    position: 'absolute',
+                                                    right: 8,
+                                                    bottom: 8,
+                                                    backgroundColor: theme.palette.background.paper,
+                                                    '&:hover': {
+                                                        backgroundColor: theme.palette.action.hover,
+                                                    }
+                                                }}
+                                                size="small"
+                                            >
+                                                <ContentCopyIcon />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Box>
+                                )}
+
+                                <Typography variant="body2" align="center" sx={{ mt: 2 }}>
+                                    Already registered? <Link href="/auth_proxy/login">Login</Link>
+                                </Typography>
+                            </Box>
+                        </Card>
+                    </SignInContainer>
+                </ThemeProvider>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
 </html>
