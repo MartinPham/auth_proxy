@@ -62,11 +62,11 @@ AUTH_PROXY_CONFIGPATH=/path/to/config/dir/ go run .
 
 **Docker**
 ```
-docker run --rm -ti -p 8080:8080 martinpham/auth_proxy:latest
+docker run --rm -ti -p 8080:8080 ghcr.io/martinpham/auth_proxy:latest
 ```
 or
 ```
-docker run --rm -ti -p 8080:8080 -v /path/to/config:/opt/config:ro martinpham/auth_proxy:latest
+docker run --rm -ti -p 8080:8080 -v /path/to/config:/opt/config:ro ghcr.io/martinpham/auth_proxy:latest
 ```
 
 **nginx**
