@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	o "github.com/Quiq/webauthn_proxy/oauth2"
-	u "github.com/Quiq/webauthn_proxy/user"
-	util "github.com/Quiq/webauthn_proxy/util"
+	o "github.com/martinpham/auth_proxy/oauth2"
+	u "github.com/martinpham/auth_proxy/user"
+	util "github.com/martinpham/auth_proxy/util"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/gorilla/sessions"
@@ -110,7 +110,6 @@ var (
 	loginVerifications map[string]*LoginVerification
 	logger             *logrus.Entry
 	oauth2Providers    map[string]*o.Provider
-	oauth2States       map[string]*o.State
 	allowedUsers       []string
 )
 
@@ -128,7 +127,7 @@ func main() {
 	flag.BoolVar(&genSecretFlag, "generate-secret", false, "generate a random string suitable as a cookie secret")
 	flag.BoolVar(&versionFlag, "version", false, "show version")
 	flag.Parse()
-	logger = util.SetupLogging("webauthn_proxy", loggingLevel)
+	logger = util.SetupLogging("auth_proxy", loggingLevel)
 
 	if genSecretFlag {
 		fmt.Println(util.GenChallenge())
@@ -155,7 +154,7 @@ func main() {
 
 	// Set configuration defaults
 	viper.SetDefault("configpath", "./config")
-	viper.SetEnvPrefix("webauthn_proxy")
+	viper.SetEnvPrefix("auth_proxy")
 	viper.BindEnv("configpath")
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
@@ -168,10 +167,10 @@ func main() {
 	viper.SetDefault("serverport", "8080")
 	viper.SetDefault("sessionsofttimeoutseconds", 28800)
 	viper.SetDefault("sessionhardtimeoutseconds", 86400)
-	viper.SetDefault("sessioncookiename", "webauthn-proxy-session")
-	viper.SetDefault("usercookiename", "webauthn-proxy-username")
+	viper.SetDefault("sessioncookiename", "authn-proxy-session")
+	viper.SetDefault("usercookiename", "authn-proxy-username")
 	viper.SetDefault("usernameregex", "^.+$")
-	viper.SetDefault("cookiesecure", false)
+	viper.SetDefault("cookiesecure", true)
 	viper.SetDefault("cookiedomain", "")
 	
 	// OAuth2 defaults
@@ -243,7 +242,6 @@ func main() {
 	
 	// Initialize OAuth2 providers if enabled
 	oauth2Providers = make(map[string]*o.Provider)
-	oauth2States = make(map[string]*o.State)
 	
 	if configuration.OAuth2Enabled {
 		if configuration.OAuth2RedirectURL == "" {
@@ -471,12 +469,6 @@ func isAuthenticated(ctx *HandlerContext, r *http.Request, w http.ResponseWriter
 // 1. The URL starts with "/" (same domain)
 // 2. The URL matches one of the allowed redirect URLs by prefix
 func validateRedirectURL(redirectURL string) bool {
-	// If redirect URL starts with "/", it's a same-domain redirect, so it's allowed
-	if strings.HasPrefix(redirectURL, "/") {
-		logger.Infof("skip validate url %s", redirectURL)
-		return true
-	}
-
 	// Check if the redirect URL matches any of the allowed redirect URLs by prefix
 	for _, allowedURL := range configuration.AllowedRedirects {
 		logger.Infof("validate url %s vs %s", redirectURL, allowedURL)
@@ -1132,6 +1124,14 @@ func HandleOAuth2Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Initialize handler context to get the session
+	ctx, err := initHandlerContext(r)
+	if err != nil {
+		logger.Errorf("%s", err)
+		util.JSONResponse(w, loginError, http.StatusBadRequest)
+		return
+	}
+
 	// Get redirect_url from query parameters if provided
 	redirectURL := r.URL.Query().Get("redirect_url")
 	
@@ -1150,8 +1150,11 @@ func HandleOAuth2Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the state in memory
-	oauth2States[state.Value] = state
+	// Store the state in the session
+	ctx.session.Values["oauth2_state"] = state.Value
+	ctx.session.Values["oauth2_redirect_url"] = state.RedirectURL
+	ctx.session.Values["oauth2_expires_at"] = state.ExpiresAt.Unix()
+	ctx.session.Save(r, w)
 
 	// Get the authorization URL
 	authURL := provider.GetAuthURL(state.Value)
@@ -1167,24 +1170,43 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	providerName := r.URL.Query().Get("provider")
 
-	// Validate state
-	storedState, exists := oauth2States[state]
-	if !exists {
+	// Initialize handler context to get the session
+	ctx, err := initHandlerContext(r)
+	if err != nil {
+		logger.Errorf("%s", err)
+		util.JSONResponse(w, loginError, http.StatusBadRequest)
+		return
+	}
+
+	// Validate state from session
+	storedState, ok := ctx.session.Values["oauth2_state"].(string)
+	if !ok || storedState != state {
 		logger.Errorf("Invalid OAuth2 state")
 		util.JSONResponse(w, loginError, http.StatusBadRequest)
 		return
 	}
 
 	// Check if state has expired
-	if storedState.ExpiresAt.Before(time.Now()) {
+	expiresAt, ok := ctx.session.Values["oauth2_expires_at"].(int64)
+	if !ok || time.Now().Unix() > expiresAt {
 		logger.Errorf("OAuth2 state has expired")
-		delete(oauth2States, state)
+		// Clear the state from session
+		delete(ctx.session.Values, "oauth2_state")
+		delete(ctx.session.Values, "oauth2_redirect_url")
+		delete(ctx.session.Values, "oauth2_expires_at")
+		ctx.session.Save(r, w)
 		util.JSONResponse(w, loginError, http.StatusBadRequest)
 		return
 	}
 
-	// Delete the state from memory
-	delete(oauth2States, state)
+	// Get the stored redirect URL
+	redirectURL, _ := ctx.session.Values["oauth2_redirect_url"].(string)
+
+	// Clear the state from session
+	delete(ctx.session.Values, "oauth2_state")
+	delete(ctx.session.Values, "oauth2_redirect_url")
+	delete(ctx.session.Values, "oauth2_expires_at")
+	ctx.session.Save(r, w)
 
 	// Get the provider
 	provider, err := o.GetProviderByName(oauth2Providers, providerName)
@@ -1221,14 +1243,6 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	// Add or update the user in the users map
 	users[user.Name] = *user
 
-	// Initialize handler context
-	ctx, err := initHandlerContext(r)
-	if err != nil {
-		logger.Errorf("%s", err)
-		util.JSONResponse(w, loginError, http.StatusBadRequest)
-		return
-	}
-
 	// Set the username
 	ctx.username = user.Name
 	ctx.user = *user
@@ -1239,13 +1253,13 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 			ctx.username, user.OAuth2Data["email"])
 		
 		// Redirect to the stored redirect URL or the login page
-		if storedState.RedirectURL != "" && validateRedirectURL(storedState.RedirectURL) {
-			http.Redirect(w, r, storedState.RedirectURL, http.StatusTemporaryRedirect)
+		if redirectURL != "" && validateRedirectURL(redirectURL) {
+			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 		} else {
 			// Fallback to query parameter for backward compatibility
-			redirectURL := r.URL.Query().Get("redirect_url")
-			if redirectURL != "" && validateRedirectURL(redirectURL) {
-				http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+			fallbackURL := r.URL.Query().Get("redirect_url")
+			if fallbackURL != "" && validateRedirectURL(fallbackURL) {
+				http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
 			} else {
 				http.Redirect(w, r, "/auth_proxy/login", http.StatusTemporaryRedirect)
 			}
@@ -1257,15 +1271,15 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) {
 	authenticateUser(ctx, r, w)
 
 	// Redirect to the stored redirect URL or the login page
-	if storedState.RedirectURL != "" && validateRedirectURL(storedState.RedirectURL) {
-		logger.Warnf("Authentication ok -> redirect to (state) %s", storedState.RedirectURL)
-		http.Redirect(w, r, storedState.RedirectURL, http.StatusTemporaryRedirect)
+	if redirectURL != "" && validateRedirectURL(redirectURL) {
+		logger.Warnf("Authentication ok -> redirect to (state) %s", redirectURL)
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 	} else {
 		// Fallback to query parameter for backward compatibility
-		redirectURL := r.URL.Query().Get("redirect_url")
-		if redirectURL != "" && validateRedirectURL(redirectURL) {
-			logger.Warnf("Authentication ok -> redirect to (param) %s", redirectURL)
-			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		fallbackURL := r.URL.Query().Get("redirect_url")
+		if fallbackURL != "" && validateRedirectURL(fallbackURL) {
+			logger.Warnf("Authentication ok -> redirect to (param) %s", fallbackURL)
+			http.Redirect(w, r, fallbackURL, http.StatusTemporaryRedirect)
 		} else {
 			logger.Warnf("Authentication ok -> redirect to start page")
 			http.Redirect(w, r, "/auth_proxy/login", http.StatusTemporaryRedirect)

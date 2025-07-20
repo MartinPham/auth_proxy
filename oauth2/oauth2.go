@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	u "github.com/Quiq/webauthn_proxy/user"
+	u "github.com/martinpham/auth_proxy/user"
 )
 
 // Provider represents an OAuth2 provider

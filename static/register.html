@@ -448,8 +448,14 @@
                                     </Box>
                                 )}
 
-                                <Typography variant="body2" align="center" sx={{ mt: 2 }}>
-                                    Already registered? <Link href="/auth_proxy/login">Login</Link>
+                                <Typography sx={{ textAlign: 'center', mt: 1 }}>
+                                    Already registered?{' '}
+                                    <Link
+                                        href="/auth_proxy/login"
+                                        sx={{ alignSelf: 'center' }}
+                                    >
+                                    Login
+                                    </Link>
                                 </Typography>
                             </Box>
                         </Card>

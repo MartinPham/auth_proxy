@@ -42,7 +42,7 @@
 
 ## **Features**
 
-- Origin codebase from https://github.com/Quiq/webauthn_proxy
+- Origin codebase from https://github.com/martinpham/auth_proxy
 - Webauthn (included discoverable process) supports
 - OAuth2 supports
 
@@ -57,16 +57,16 @@ go run .
 ```
 or
 ```
-WEBAUTHN_PROXY_CONFIGPATH=/path/to/config/dir/ go run .
+AUTH_PROXY_CONFIGPATH=/path/to/config/dir/ go run .
 ```
 
 **Docker**
 ```
-docker run --rm -ti -p 8080:8080 martinpham/authn_proxy:latest
+docker run --rm -ti -p 8080:8080 martinpham/auth_proxy:latest
 ```
 or
 ```
-docker run --rm -ti -p 8080:8080 -v /path/to/config:/opt/config:ro martinpham/authn_proxy:latest
+docker run --rm -ti -p 8080:8080 -v /path/to/config:/opt/config:ro martinpham/auth_proxy:latest
 ```
 
 **nginx**
@@ -142,4 +142,4 @@ Please contribute using [GitHub Flow](https://guides.github.com/introduction/flo
 
 ## **License**
 
-This project is licensed under the [GNU General Public License v3.0](https://opensource.org/licenses/gpl-3.0.html), still includes code originally licensed under Apache 2.0 from https://github.com/Quiq/webauthn_proxy - see the [`LICENSE`](LICENSE) file for details.
+This project is licensed under the [GNU General Public License v3.0](https://opensource.org/licenses/gpl-3.0.html), still includes code originally licensed under Apache 2.0 from https://github.com/martinpham/auth_proxy - see the [`LICENSE`](LICENSE) file for details.

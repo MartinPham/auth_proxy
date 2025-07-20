@@ -13,7 +13,7 @@ rpOrigins:
 #  - https://service.example.com
 
 allowedRedirects: 
-  - http://localhost/
+  - /
 ## serverAddress - Address the proxy server should listen on (usually 127.0.0.1 or 0.0.0.0)
 ## Note, it should be 0.0.0.0 when running in Docker and network mode is not "host".
 # serverAddress: 0.0.0.0

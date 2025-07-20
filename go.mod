@@ -1,4 +1,4 @@
-module github.com/Quiq/webauthn_proxy
+module github.com/martinpham/auth_proxy
 
 go 1.23.0
 
