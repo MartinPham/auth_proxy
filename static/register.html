@@ -222,6 +222,10 @@
                             cred.id = bufferDecode(cred.id);
                         }
                     }
+
+                    credCreateOptions.publicKey.authenticatorSelection = {
+                        residentKey: "preferred",
+                    }
                     
                     return navigator.credentials.create({
                         publicKey: credCreateOptions.publicKey
