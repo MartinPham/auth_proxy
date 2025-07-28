@@ -92,6 +92,10 @@ func GetUserIP(r *http.Request) string {
 	if ip != "" {
 		return ip
 	}
+	ip = r.Header.Get("Cf-Connecting-Ip")
+	if ip != "" {
+		return ip
+	}
 	return strings.Split(r.RemoteAddr, ":")[0]
 }
 
