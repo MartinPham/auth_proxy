@@ -84,7 +84,7 @@ func ExpireWebauthnSession(session *sessions.Session, r *http.Request, w http.Re
 
 // GetUserIP return user IP address
 func GetUserIP(r *http.Request) string {
-	ip := r.Header.Get("X-Forwarded-For")
+	ip = r.Header.Get("Cf-Connecting-Ip")
 	if ip != "" {
 		return ip
 	}
@@ -92,7 +92,7 @@ func GetUserIP(r *http.Request) string {
 	if ip != "" {
 		return ip
 	}
-	ip = r.Header.Get("Cf-Connecting-Ip")
+	ip := r.Header.Get("X-Forwarded-For")
 	if ip != "" {
 		return ip
 	}
